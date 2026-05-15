@@ -24,7 +24,9 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
 app.use(cors({
   origin: [
     'http://localhost:1420',
+    'http://localhost:5173',
     'tauri://localhost',
+    'https://eqytweak.vercel.app',
     'https://eqy-tweak.vercel.app'
   ],
   methods: ['GET', 'POST', 'OPTIONS'],
