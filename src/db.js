@@ -2,10 +2,6 @@ import pg from 'pg'
 
 const { Pool } = pg
 
-if (!process.env.DATABASE_URL) {
-  console.warn('DATABASE_URL is missing. PostgreSQL connection will fail until it is configured.')
-}
-
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false },
@@ -36,7 +32,7 @@ export async function initDb() {
 
     CREATE TABLE IF NOT EXISTS licenses (
       id SERIAL PRIMARY KEY,
-      user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
       order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,
       key TEXT UNIQUE NOT NULL,
       plan_id TEXT NOT NULL,
@@ -46,6 +42,12 @@ export async function initDb() {
       premium BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+  `)
+
+  await query(`
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
+    ALTER TABLE licenses ADD COLUMN IF NOT EXISTS last_verified_at TIMESTAMPTZ;
+    ALTER TABLE licenses ADD COLUMN IF NOT EXISTS last_app_version TEXT;
 
     CREATE TABLE IF NOT EXISTS hwid_reset_requests (
       id SERIAL PRIMARY KEY,
@@ -53,17 +55,10 @@ export async function initDb() {
       license_id INTEGER REFERENCES licenses(id) ON DELETE CASCADE,
       reason TEXT,
       status TEXT NOT NULL DEFAULT 'pending',
-      admin_note TEXT,
-      reviewed_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      reviewed_at TIMESTAMPTZ
     );
-  `)
 
-  await query(`
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
-    ALTER TABLE licenses ADD COLUMN IF NOT EXISTS last_verified_at TIMESTAMPTZ;
-    ALTER TABLE licenses ADD COLUMN IF NOT EXISTS last_app_version TEXT;
-    ALTER TABLE hwid_reset_requests ADD COLUMN IF NOT EXISTS admin_note TEXT;
     ALTER TABLE hwid_reset_requests ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
   `)
 }
