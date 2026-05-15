@@ -90,6 +90,48 @@ async function userHasActiveLicense(userId) {
   return found.rows.length > 0
 }
 
+function formatDate(value) {
+  if (!value) return 'Lifetime'
+  try {
+    return new Date(value).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    })
+  } catch {
+    return String(value)
+  }
+}
+
+async function safeSendEmail(payload) {
+  try {
+    await sendEmail(payload)
+  } catch (error) {
+    console.error('EMAIL_SEND_ERROR:', error?.message || error)
+  }
+}
+
+function licenseEmailHtml({ title, message, licenseKey, planName, expiresAt }) {
+  return `
+    <div style="margin:0;padding:0;background:#07111f;font-family:Arial,Helvetica,sans-serif;color:#eaf4ff;">
+      <div style="max-width:620px;margin:0 auto;padding:32px 18px;">
+        <div style="border:1px solid rgba(56,189,248,.25);background:linear-gradient(135deg,rgba(15,23,42,.98),rgba(8,47,73,.92));border-radius:22px;padding:28px;box-shadow:0 20px 60px rgba(0,0,0,.35);">
+          <div style="font-size:13px;letter-spacing:3px;text-transform:uppercase;color:#38bdf8;font-weight:700;">EQY Tweak</div>
+          <h1 style="margin:12px 0 10px;font-size:28px;line-height:1.2;color:#ffffff;">${title}</h1>
+          <p style="margin:0 0 22px;color:#b6c7d8;font-size:15px;line-height:1.7;">${message}</p>
+          <div style="background:rgba(2,6,23,.52);border:1px solid rgba(148,163,184,.18);border-radius:16px;padding:18px;margin:20px 0;">
+            <p style="margin:0 0 8px;color:#93a4b8;font-size:13px;text-transform:uppercase;letter-spacing:1px;">License Key</p>
+            <p style="margin:0;font-size:20px;line-height:1.4;color:#67e8f9;font-weight:800;word-break:break-all;">${licenseKey}</p>
+          </div>
+          <p style="margin:0 0 8px;color:#d8e6f5;font-size:15px;"><strong>Plan:</strong> ${planName}</p>
+          <p style="margin:0;color:#d8e6f5;font-size:15px;"><strong>Expires:</strong> ${formatDate(expiresAt)}</p>
+          <p style="margin:26px 0 0;color:#8ca3b8;font-size:13px;line-height:1.6;">Keep this email safe. You can manage your license from your EQY account dashboard.</p>
+        </div>
+      </div>
+    </div>
+  `
+}
+
 app.get('/api/health', (_, res) => res.json({ ok: true }))
 
 app.post('/api/auth/register', authLimiter, asyncHandler(async (req, res) => {
@@ -251,6 +293,23 @@ app.post('/api/paypal/capture-order', auth, asyncHandler(async (req, res) => {
     [req.user.id, orderRes.rows[0].id, key, orderRes.rows[0].plan_id, 'active', expiresAt, plan.premium]
   )
 
+  const userRes = await query('SELECT email FROM users WHERE id = $1', [req.user.id])
+  const emailTo = userRes.rows[0]?.email
+
+  if (emailTo) {
+    await safeSendEmail({
+      to: emailTo,
+      subject: 'EQY License Activated',
+      html: licenseEmailHtml({
+        title: 'Your EQY license is active',
+        message: 'Your payment was completed successfully. Your license key is ready below.',
+        licenseKey: key,
+        planName: plan.name,
+        expiresAt,
+      }),
+    })
+  }
+
   res.json({ license: created.rows[0] })
 }))
 
@@ -374,18 +433,23 @@ app.post('/api/admin/licenses/create', adminAuth, asyncHandler(async (req, res) 
     [userId, key, planId, 'active', expiresAt, premium]
   )
 
+  if (email) {
+    await safeSendEmail({
+      to: email,
+      subject: 'EQY License Created',
+      html: licenseEmailHtml({
+        title: 'Your EQY license has been created',
+        message: 'An EQY license was created for your account. Your license key is ready below.',
+        licenseKey: key,
+        planName: planId,
+        expiresAt,
+      }),
+    })
+  }
+
   res.json({ ok: true, license: created.rows[0], message: `License created: ${key}` })
 }))
 
-app.get('/api/test-email', asyncHandler(async (_, res) => {
-  const info = await sendEmail({
-    to: 'zz0009cx0@gmail.com',
-    subject: 'EQY RESEND TEST',
-    html: '<h1>EQY email system works.</h1>',
-  })
-
-  res.json({ ok: true, info })
-}))
 
 app.use((err, req, res, next) => {
   console.error(err)
