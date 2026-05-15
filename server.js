@@ -380,8 +380,8 @@ app.post('/api/admin/licenses/create', adminAuth, asyncHandler(async (req, res) 
 app.get('/api/test-email', asyncHandler(async (_, res) => {
   try {
     const info = await sendEmail({
-      to: process.env.SMTP_USER,
-      subject: 'EQY SMTP TEST',
+      to: 'TUAEMAIL@gmail.com',
+      subject: 'EQY RESEND TEST',
       html: '<h1>EQY email system works.</h1>',
     })
 
@@ -396,7 +396,7 @@ app.get('/api/test-email', asyncHandler(async (_, res) => {
     res.status(500).json({
       ok: false,
       error: error.message,
-      code: error.code,
+      name: error.name,
     })
   }
 }))

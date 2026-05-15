@@ -13,6 +13,19 @@ const transporter = nodemailer.createTransport({
   socketTimeout: 10000,
 })
 
+import { Resend } from 'resend'
+
+const resend = new Resend(process.env.RESEND_API_KEY)
+
+export async function sendEmail({ to, subject, html }) {
+  return resend.emails.send({
+    from: process.env.EMAIL_FROM,
+    to,
+    subject,
+    html,
+  })
+}
+
 export async function sendEmail({ to, subject, html }) {
   return transporter.sendMail({
     from: process.env.EMAIL_FROM || process.env.SMTP_USER,
