@@ -1,0 +1,11 @@
+{
+  "version": "0.1.1",
+  "notes": "EQY Tweak update with backend fixes, administrator startup improvements, real tweak execution fixes, updater signing support and stability improvements.",
+  "pub_date": "2026-05-14T00:00:00Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSRVp4TFFqbTR3bWdzWHc3OGVpVnNBcUZtTytZR0R3cGJxZDF4dU9hYXdUVUxmczh3S25jNERqOU8wY0dCY1U3Sisyb01yMzh3MytUKzhDQmczTWZTcENJbzJ1ZjVlTUFRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NzM1MTI0CWZpbGU6ZXF5IHR3ZWFrXzAuMS4xX3g2NC1zZXR1cC5leGUKOTNMcXI1U0dDVkR3OW9yaGtid0xpUi8wMk0wQ1loWUsyQS9jSW1nc3hjNUs0RFg2UTFTMzRuU3VMSlc3K3JsQkl2ckRaSnlEampzTGt6V3MzMXJyQlE9PQo=",
+      "url": "https://github.com/zztwi/eqy-tweak-releases/releases/download/v0.1.1/eqy%20tweak_0.1.1_x64-setup.exe"
+    }
+  }
+}
