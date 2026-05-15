@@ -11,6 +11,13 @@ CORS_ORIGIN=https://eqytweak.vercel.app
 RESEND_API_KEY=re_UAkYw3SY_DD9ma8vceAyakyHNe8EmepVy
 EMAIL_FROM=onboarding@resend.dev
 
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=ppzztwi@gmail.com
+SMTP_PASS=xllspaifqszpswyb
+EMAIL_FROM=la-ppzztwi@gmail.com
+
 PAYPAL_ENV=sandbox
 
 PAYPAL_CLIENT_ID=AT8Gh0O0EBPxsT6LZYZLG4jU7wQ9Yd_zTEWaNie0S_UZ4r-HgcoLLQnPq-bKGcFVldPHe8N5ilXmx1ET
