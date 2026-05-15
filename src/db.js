@@ -43,22 +43,4 @@ export async function initDb() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
   `)
-
-  await query(`
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
-    ALTER TABLE licenses ADD COLUMN IF NOT EXISTS last_verified_at TIMESTAMPTZ;
-    ALTER TABLE licenses ADD COLUMN IF NOT EXISTS last_app_version TEXT;
-
-    CREATE TABLE IF NOT EXISTS hwid_reset_requests (
-      id SERIAL PRIMARY KEY,
-      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-      license_id INTEGER REFERENCES licenses(id) ON DELETE CASCADE,
-      reason TEXT,
-      status TEXT NOT NULL DEFAULT 'pending',
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      reviewed_at TIMESTAMPTZ
-    );
-
-    ALTER TABLE hwid_reset_requests ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
-  `)
 }
