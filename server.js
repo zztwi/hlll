@@ -7,7 +7,7 @@ import crypto from 'crypto'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import rateLimit from 'express-rate-limit'
-import { Resend } from 'resend'
+import nodemailer from 'nodemailer'
 import { query, initDb } from './src/db.js'
 import { createPayPalOrder, capturePayPalOrder } from './src/paypal.js'
 import { plans } from './src/plans.js'
@@ -20,10 +20,18 @@ const PORT = process.env.PORT || 3001
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret'
 const ADMIN_SECRET = process.env.ADMIN_SECRET || ''
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
-const EMAIL_FROM = process.env.EMAIL_FROM || 'onboarding@resend.dev'
+const EMAIL_FROM = process.env.EMAIL_FROM || process.env.SMTP_USER || ''
 const EMAIL_ADMIN = process.env.EMAIL_ADMIN || ''
-const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || 'smtp.gmail.com',
+  port: Number(process.env.SMTP_PORT || 465),
+  secure: String(process.env.SMTP_SECURE || 'true') === 'true',
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+})
 app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',') || true }))
 app.use(express.json({ limit: '1mb' }))
 
@@ -100,12 +108,20 @@ function emailShell(title, content) {
 }
 
 async function sendEmail({ to, subject, html }) {
-  if (!resend || !to) {
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS || !to) {
     console.log('[email skipped]', subject, to || 'no-recipient')
     return
   }
+
   try {
-    await resend.emails.send({ from: EMAIL_FROM, to, subject, html })
+    await transporter.sendMail({
+      from: `EQY Tweak <${EMAIL_FROM}>`,
+      to,
+      subject,
+      html,
+    })
+
+    console.log('[email sent]', subject, to)
   } catch (error) {
     console.error('[email failed]', subject, error?.message || error)
   }
@@ -324,19 +340,3 @@ app.use((err, req, res, next) => {
 
 await initDb()
 app.listen(PORT, () => console.log(`EQY backend running on ${PORT}`))
-
-app.get('/api/test-email', async (_, res) => {
-  try {
-    const data = await resend.emails.send({
-      from: EMAIL_FROM,
-      to: EMAIL_ADMIN,
-      subject: 'EQY Test Email',
-      html: '<h1>EQY email system works ✅</h1><p>This is a test from your backend.</p>',
-    })
-
-    res.json({ ok: true, data })
-  } catch (e) {
-    console.error('[test email failed]', e)
-    res.status(500).json({ ok: false, error: e.message })
-  }
-})
