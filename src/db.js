@@ -2,6 +2,10 @@ import pg from 'pg'
 
 const { Pool } = pg
 
+if (!process.env.DATABASE_URL) {
+  console.warn('DATABASE_URL is missing. PostgreSQL connection will fail until it is configured.')
+}
+
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false },
@@ -27,6 +31,7 @@ export async function initDb() {
       plan_id TEXT NOT NULL,
       amount NUMERIC NOT NULL,
       status TEXT NOT NULL DEFAULT 'created',
+      paid_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
@@ -40,7 +45,28 @@ export async function initDb() {
       hwid TEXT,
       expires_at TIMESTAMPTZ,
       premium BOOLEAN DEFAULT FALSE,
+      last_verified_at TIMESTAMPTZ,
+      last_app_version TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS hwid_reset_requests (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      license_id INTEGER REFERENCES licenses(id) ON DELETE CASCADE,
+      reason TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      resolved_at TIMESTAMPTZ
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_licenses_user_id ON licenses(user_id);
+    CREATE INDEX IF NOT EXISTS idx_licenses_key ON licenses(key);
+    CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
+    CREATE INDEX IF NOT EXISTS idx_hwid_reset_requests_user_id ON hwid_reset_requests(user_id);
   `)
+
+  await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;`)
+  await query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS last_verified_at TIMESTAMPTZ;`)
+  await query(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS last_app_version TEXT;`)
 }
