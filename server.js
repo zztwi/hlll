@@ -324,3 +324,19 @@ app.use((err, req, res, next) => {
 
 await initDb()
 app.listen(PORT, () => console.log(`EQY backend running on ${PORT}`))
+
+app.get('/api/test-email', async (_, res) => {
+  try {
+    const data = await resend.emails.send({
+      from: EMAIL_FROM,
+      to: EMAIL_ADMIN,
+      subject: 'EQY Test Email',
+      html: '<h1>EQY email system works ✅</h1><p>This is a test from your backend.</p>',
+    })
+
+    res.json({ ok: true, data })
+  } catch (e) {
+    console.error('[test email failed]', e)
+    res.status(500).json({ ok: false, error: e.message })
+  }
+})
