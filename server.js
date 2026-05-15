@@ -20,7 +20,10 @@ const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret'
 const ADMIN_SECRET = process.env.ADMIN_SECRET || ''
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
 
-app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',') || true }))
+app.use(cors({
+  origin: process.env.CORS_ORIGIN?.split(',') || true,
+  credentials: true,
+}))
 app.use(express.json({ limit: '1mb' }))
 
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 80, standardHeaders: true, legacyHeaders: false })
@@ -200,7 +203,10 @@ app.post('/api/license/hwid-reset-request', auth, asyncHandler(async (req, res) 
 }))
 
 app.post('/api/paypal/create-order', auth, asyncHandler(async (req, res) => {
-  const { planId } = req.body
+  const { planId } = req.body || {}
+
+  if (!planId) return res.status(400).json({ error: 'Missing planId.' })
+
   const plan = plans[planId]
   if (!plan) return res.status(400).json({ error: 'Unknown plan.' })
 
