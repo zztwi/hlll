@@ -360,51 +360,32 @@ app.post('/api/admin/licenses/create', adminAuth, asyncHandler(async (req, res) 
     ? String(req.body.planId)
     : `${premium ? 'premium' : 'standard'}_${days ? `${days}d` : 'lifetime'}`
   let userId = null
+
   if (email) {
     const user = await query('SELECT id FROM users WHERE email = $1', [email])
     if (user.rows.length) userId = user.rows[0].id
   }
+
   const key = generateLicenseKey(planId)
   const expiresAt = days ? addDays(days) : null
+
   const created = await query(
     'INSERT INTO licenses(user_id, key, plan_id, status, expires_at, premium) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',
     [userId, key, planId, 'active', expiresAt, premium]
   )
+
   res.json({ ok: true, license: created.rows[0], message: `License created: ${key}` })
 }))
 
-app.post('/api/admin/licenses/create', adminAuth, asyncHandler(async (req, res) => {
-  // ...
-}))
-
 app.get('/api/test-email', asyncHandler(async (_, res) => {
-  try {
-    const info = await sendEmail({
-      to: 'TUAEMAIL@gmail.com',
-      subject: 'EQY RESEND TEST',
-      html: '<h1>EQY email system works.</h1>',
-    })
+  const info = await sendEmail({
+    to: 'ppzztwi@gmail.com',
+    subject: 'EQY RESEND TEST',
+    html: '<h1>EQY email system works.</h1>',
+  })
 
-    res.json({
-      ok: true,
-      message: 'Email sent successfully.',
-      info,
-    })
-  } catch (error) {
-    console.error(error)
-
-    res.status(500).json({
-      ok: false,
-      error: error.message,
-      name: error.name,
-    })
-  }
+  res.json({ ok: true, info })
 }))
-
-app.use((err, req, res, next) => {
-  console.error(err)
-  res.status(500).json({ error: err.message || 'Server error.' })
-})
 
 app.use((err, req, res, next) => {
   console.error(err)
