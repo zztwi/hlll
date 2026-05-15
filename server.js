@@ -347,9 +347,11 @@ app.post('/api/admin/licenses/:id/revoke', adminAuth, asyncHandler(async (req, r
 
 app.post('/api/admin/licenses/create', adminAuth, asyncHandler(async (req, res) => {
   const email = req.body.email ? String(req.body.email).toLowerCase().trim() : null
-  const planId = String(req.body.planId || 'manual_lifetime')
-  const days = req.body.days ? Number(req.body.days) : null
+  const days = req.body.days ? Math.max(1, Number(req.body.days)) : null
   const premium = Boolean(req.body.premium)
+  const planId = req.body.planId
+    ? String(req.body.planId)
+    : `${premium ? 'premium' : 'standard'}_${days ? `${days}d` : 'lifetime'}`
   let userId = null
   if (email) {
     const user = await query('SELECT id FROM users WHERE email = $1', [email])
