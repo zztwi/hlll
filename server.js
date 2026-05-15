@@ -10,6 +10,7 @@ import rateLimit from 'express-rate-limit'
 import { query, initDb } from './src/db.js'
 import { createPayPalOrder, capturePayPalOrder } from './src/paypal.js'
 import { plans } from './src/plans.js'
+import { sendEmail } from './src/mail.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -371,6 +372,26 @@ app.post('/api/admin/licenses/create', adminAuth, asyncHandler(async (req, res) 
   )
   res.json({ ok: true, license: created.rows[0], message: `License created: ${key}` })
 }))
+
+app.post('/api/admin/licenses/create', adminAuth, asyncHandler(async (req, res) => {
+  // ...
+}))
+
+// TEST EMAIL ROUTE
+app.get('/api/test-email', asyncHandler(async (_, res) => {
+  await sendEmail({
+    to: process.env.SMTP_USER,
+    subject: 'EQY SMTP TEST',
+    html: '<h1>SMTP works correctly.</h1>',
+  })
+
+  res.json({ ok: true })
+}))
+
+app.use((err, req, res, next) => {
+  console.error(err)
+  res.status(500).json({ error: err.message || 'Server error.' })
+})
 
 app.use((err, req, res, next) => {
   console.error(err)
