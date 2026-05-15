@@ -377,15 +377,24 @@ app.post('/api/admin/licenses/create', adminAuth, asyncHandler(async (req, res) 
   // ...
 }))
 
-// TEST EMAIL ROUTE
 app.get('/api/test-email', asyncHandler(async (_, res) => {
-  await sendEmail({
-    to: process.env.SMTP_USER,
-    subject: 'EQY SMTP TEST',
-    html: '<h1>SMTP works correctly.</h1>',
-  })
+  try {
+    await sendEmail({
+      to: process.env.SMTP_USER,
+      subject: 'EQY SMTP TEST',
+      html: '<h1>SMTP works correctly.</h1>',
+    })
 
-  res.json({ ok: true })
+    res.json({ ok: true, message: 'Email sent.' })
+  } catch (error) {
+    console.error('SMTP TEST ERROR:', error)
+    res.status(500).json({
+      ok: false,
+      error: error.message,
+      code: error.code,
+      command: error.command,
+    })
+  }
 }))
 
 app.use((err, req, res, next) => {
