@@ -330,7 +330,15 @@ app.post('/api/admin/licenses/create', adminAuth, asyncHandler(async (req, res) 
   const key = generateLicenseKey(planId)
   const expiresAt = days ? addDays(days) : null
   const created = await query('INSERT INTO licenses(user_id, key, plan_id, status, expires_at, premium) VALUES($1,$2,$3,$4,$5,$6) RETURNING *', [userId, key, planId, 'active', expiresAt, premium])
-  if (email) await sendEmail({ to: email, subject: 'Your EQY license key', html: licenseEmailHtml({ key, planId, premium, expiresAt }) })
+  if (email) {
+  sendEmail({
+    to: email,
+    subject: 'Your EQY license key',
+    html: licenseEmailHtml({ key, planId, premium, expiresAt }),
+  }).catch((error) => {
+    console.error('[email background failed]', error?.message || error)
+  })
+}
   res.json({ ok: true, license: created.rows[0], message: `License created: ${key}` })
 }))
 
