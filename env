@@ -1,0 +1,14 @@
+PORT=3001
+
+DATABASE_URL=postgresql://eqy_db_user:tkCw5zDHLG7yn8H9EL6Hn5191mETd0GX@dpg-d836otgg4nts73d2mtig-a.oregon-postgres.render.com/eqy_db
+DATABASE_SSL=true
+
+JWT_SECRET=Zzilmiocazzodiboss0.
+
+FRONTEND_URL=https://eqytweak.vercel.app
+CORS_ORIGIN=https://eqytweak.vercel.app
+
+PAYPAL_ENV=sandbox
+
+PAYPAL_CLIENT_ID=AT8Gh0O0EBPxsT6LZYZLG4jU7wQ9Yd_zTEWaNie0S_UZ4r-HgcoLLQnPq-bKGcFVldPHe8N5ilXmx1ET
+PAYPAL_CLIENT_SECRET=ECK1zP-S-nWTFvweTIR8CscoDLVmk_yW_UI3ed7UoE12SFwAwA-OwTcMAIM88OXuRouKTrJ25HzSibt6
