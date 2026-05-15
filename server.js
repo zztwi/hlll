@@ -11,7 +11,7 @@ import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { query, initDb } from './src/db.js'
 import { createPayPalOrder, capturePayPalOrder } from './src/paypal.js'
-import { plans, publicPlans } from './src/plans.js'
+import { plans } from './src/plans.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -19,6 +19,7 @@ const __dirname = path.dirname(__filename)
 const app = express()
 const PORT = process.env.PORT || 3001
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret'
+const ADMIN_SECRET = process.env.ADMIN_SECRET || ''
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
 const CORS_ORIGINS = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map((item) => item.trim()).filter(Boolean)
@@ -31,14 +32,14 @@ app.use(express.json({ limit: '1mb' }))
 
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  limit: 120,
+  limit: 160,
   standardHeaders: true,
   legacyHeaders: false,
 })
 
 const authLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
-  limit: 25,
+  limit: 30,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many attempts. Try again later.' },
@@ -74,29 +75,37 @@ function auth(req, res, next) {
   }
 }
 
+function adminAuth(req, res, next) {
+  const provided = req.headers['x-admin-secret'] || req.query.adminSecret
+  if (!ADMIN_SECRET) return res.status(500).json({ error: 'ADMIN_SECRET is not configured on the backend.' })
+  if (!provided || provided !== ADMIN_SECRET) return res.status(401).json({ error: 'Invalid admin password.' })
+  next()
+}
+
 function addDays(days) {
   if (!days) return null
   const date = new Date()
-  date.setDate(date.getDate() + days)
+  date.setDate(date.getDate() + Number(days))
   return date.toISOString()
 }
 
-function generateLicenseKey(planId) {
-  const clean = String(planId).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10)
+function generateLicenseKey(planId = 'MANUAL') {
+  const clean = String(planId).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10) || 'MANUAL'
   const chunks = Array.from({ length: 4 }, () => crypto.randomBytes(2).toString('hex').toUpperCase())
   return `EQY-${clean}-${chunks.join('-')}`
 }
 
 function isLicenseActive(license) {
-  if (!license) return false
-  if (license.status !== 'active') return false
-  if (license.expires_at && new Date(license.expires_at) < new Date()) return false
-  return true
+  return Boolean(
+    license &&
+    license.status === 'active' &&
+    (!license.expires_at || new Date(license.expires_at) > new Date())
+  )
 }
 
 async function getActiveLicenses(userId) {
   const result = await query(
-    `SELECT key, plan_id, status, expires_at, premium, hwid, last_verified_at, created_at
+    `SELECT id, key, plan_id, status, expires_at, premium, hwid, last_verified_at, created_at
      FROM licenses
      WHERE user_id = $1
      ORDER BY created_at DESC`,
@@ -112,6 +121,20 @@ async function getActiveLicenses(userId) {
   }))
 }
 
+async function getMyHwidRequests(userId) {
+  const result = await query(
+    `SELECT r.id, r.reason, r.status, r.admin_note, r.reviewed_at, r.created_at,
+            l.key, l.plan_id
+     FROM hwid_reset_requests r
+     JOIN licenses l ON l.id = r.license_id
+     WHERE r.user_id = $1
+     ORDER BY r.created_at DESC
+     LIMIT 20`,
+    [userId]
+  )
+  return result.rows
+}
+
 async function requireActiveLicense(req, res, next) {
   try {
     const result = await query(
@@ -123,10 +146,7 @@ async function requireActiveLicense(req, res, next) {
       [req.user.id]
     )
 
-    if (!result.rows.length) {
-      return res.status(403).json({ error: 'Active license required.' })
-    }
-
+    if (!result.rows.length) return res.status(403).json({ error: 'Active license required.' })
     next()
   } catch (error) {
     next(error)
@@ -134,19 +154,10 @@ async function requireActiveLicense(req, res, next) {
 }
 
 app.get('/', (_, res) => {
-  res.json({
-    ok: true,
-    name: 'EQY Backend',
-    status: 'online',
-    frontend: FRONTEND_URL,
-  })
+  res.json({ ok: true, name: 'EQY Backend', status: 'online', frontend: FRONTEND_URL })
 })
 
 app.get('/api/health', (_, res) => res.json({ ok: true, status: 'online' }))
-
-app.get('/api/plans', (_, res) => {
-  res.json({ plans: publicPlans })
-})
 
 app.post('/api/auth/register', authLimiter, asyncHandler(async (req, res) => {
   const email = normalizeEmail(req.body.email)
@@ -187,7 +198,75 @@ app.get('/api/auth/me', auth, asyncHandler(async (req, res) => {
   if (!userRes.rows.length) return res.status(404).json({ error: 'User not found.' })
 
   const licenses = await getActiveLicenses(req.user.id)
-  res.json({ user: publicUser(userRes.rows[0]), licenses })
+  const hwidRequests = await getMyHwidRequests(req.user.id)
+  res.json({ user: publicUser(userRes.rows[0]), licenses, hwidRequests })
+}))
+
+app.post('/api/auth/change-password', auth, authLimiter, asyncHandler(async (req, res) => {
+  const currentPassword = String(req.body.currentPassword || '')
+  const newPassword = String(req.body.newPassword || '')
+
+  if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Current and new password are required.' })
+  if (newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters.' })
+
+  const found = await query('SELECT id, password_hash FROM users WHERE id = $1', [req.user.id])
+  if (!found.rows.length) return res.status(404).json({ error: 'User not found.' })
+
+  const ok = await bcrypt.compare(currentPassword, found.rows[0].password_hash)
+  if (!ok) return res.status(401).json({ error: 'Current password is incorrect.' })
+
+  const hash = await bcrypt.hash(newPassword, 12)
+  await query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, req.user.id])
+  res.json({ ok: true, message: 'Password updated successfully.' })
+}))
+
+app.post('/api/license/activate', auth, asyncHandler(async (req, res) => {
+  const key = String(req.body.key || '').trim().toUpperCase()
+  if (!key) return res.status(400).json({ error: 'License key required.' })
+
+  const found = await query('SELECT * FROM licenses WHERE key = $1', [key])
+  if (!found.rows.length) return res.status(404).json({ error: 'License not found.' })
+
+  const license = found.rows[0]
+  if (license.status !== 'active') return res.status(403).json({ error: 'License is not active.' })
+  if (license.expires_at && new Date(license.expires_at) < new Date()) {
+    await query('UPDATE licenses SET status = $1 WHERE id = $2', ['expired', license.id])
+    return res.status(403).json({ error: 'License expired.' })
+  }
+
+  if (license.user_id && Number(license.user_id) !== Number(req.user.id)) {
+    return res.status(409).json({ error: 'This license is already linked to another account.' })
+  }
+
+  await query('UPDATE licenses SET user_id = $1 WHERE id = $2', [req.user.id, license.id])
+  res.json({ ok: true, message: 'License activated on your account.' })
+}))
+
+app.post('/api/license/hwid-reset-request', auth, asyncHandler(async (req, res) => {
+  const key = String(req.body.key || '').trim().toUpperCase()
+  const reason = String(req.body.reason || '').trim().slice(0, 600)
+
+  if (!key) return res.status(400).json({ error: 'License key required.' })
+
+  const licenseRes = await query('SELECT id, user_id FROM licenses WHERE key = $1 AND user_id = $2', [key, req.user.id])
+  if (!licenseRes.rows.length) return res.status(404).json({ error: 'License not found on your account.' })
+
+  const openRequest = await query(
+    `SELECT id FROM hwid_reset_requests
+     WHERE license_id = $1 AND status = 'pending'
+     LIMIT 1`,
+    [licenseRes.rows[0].id]
+  )
+
+  if (openRequest.rows.length) return res.status(409).json({ error: 'You already have a pending HWID reset request.' })
+
+  await query(
+    `INSERT INTO hwid_reset_requests(user_id, license_id, reason, status)
+     VALUES($1, $2, $3, 'pending')`,
+    [req.user.id, licenseRes.rows[0].id, reason || 'No reason provided.']
+  )
+
+  res.json({ ok: true, message: 'HWID reset request sent. Waiting for admin review.' })
 }))
 
 app.post('/api/paypal/create-order', auth, asyncHandler(async (req, res) => {
@@ -210,9 +289,8 @@ app.post('/api/paypal/create-order', auth, asyncHandler(async (req, res) => {
     [order.id, req.user.id, planId, plan.price, 'created']
   )
 
-  const approval = order.links?.find((link) => link.rel === 'approve')
+  const approval = order.links?.find((l) => l.rel === 'approve')
   if (!approval?.href) return res.status(502).json({ error: 'PayPal approval URL missing.' })
-
   res.json({ orderId: order.id, approvalUrl: approval.href })
 }))
 
@@ -288,41 +366,11 @@ app.post('/api/license/verify', asyncHandler(async (req, res) => {
   })
 }))
 
-app.post('/api/license/hwid-reset-request', auth, asyncHandler(async (req, res) => {
-  const key = String(req.body.key || '').trim().toUpperCase()
-  const reason = String(req.body.reason || '').trim().slice(0, 500)
-
-  if (!key) return res.status(400).json({ error: 'License key required.' })
-
-  const licenseRes = await query('SELECT id, user_id FROM licenses WHERE key = $1 AND user_id = $2', [key, req.user.id])
-  if (!licenseRes.rows.length) return res.status(404).json({ error: 'License not found on your account.' })
-
-  const openRequest = await query(
-    `SELECT id FROM hwid_reset_requests
-     WHERE license_id = $1 AND status = 'pending'
-     LIMIT 1`,
-    [licenseRes.rows[0].id]
-  )
-
-  if (openRequest.rows.length) return res.status(409).json({ error: 'You already have a pending HWID reset request.' })
-
-  await query(
-    `INSERT INTO hwid_reset_requests(user_id, license_id, reason, status)
-     VALUES($1, $2, $3, 'pending')`,
-    [req.user.id, licenseRes.rows[0].id, reason || 'No reason provided.']
-  )
-
-  res.json({ ok: true, message: 'HWID reset request sent.' })
-}))
-
 app.get('/api/download/:kind', auth, requireActiveLicense, (req, res) => {
   const file = req.params.kind === 'msi' ? 'eqy-tweak-installer.msi' : 'eqy-tweak-setup.exe'
   const fullPath = path.join(__dirname, 'downloads', file)
 
-  if (!fs.existsSync(fullPath)) {
-    return res.status(404).json({ error: 'Installer not uploaded yet.' })
-  }
-
+  if (!fs.existsSync(fullPath)) return res.status(404).json({ error: 'Installer not uploaded yet.' })
   res.download(fullPath)
 })
 
@@ -331,6 +379,132 @@ app.get('/latest.json', (_, res) => {
   if (!fs.existsSync(fullPath)) return res.status(404).json({ error: 'latest.json not uploaded yet.' })
   res.sendFile(fullPath)
 })
+
+/* Admin panel API */
+app.get('/api/admin/overview', adminAuth, asyncHandler(async (_, res) => {
+  const [users, licenses, pending, paid] = await Promise.all([
+    query('SELECT COUNT(*)::int AS count FROM users'),
+    query('SELECT COUNT(*)::int AS count FROM licenses'),
+    query("SELECT COUNT(*)::int AS count FROM hwid_reset_requests WHERE status = 'pending'"),
+    query("SELECT COALESCE(SUM(amount), 0)::float AS total FROM orders WHERE status = 'paid'"),
+  ])
+
+  res.json({
+    users: users.rows[0].count,
+    licenses: licenses.rows[0].count,
+    pendingHwidRequests: pending.rows[0].count,
+    paidRevenue: paid.rows[0].total,
+  })
+}))
+
+app.get('/api/admin/users', adminAuth, asyncHandler(async (_, res) => {
+  const result = await query(
+    `SELECT u.id, u.email, u.created_at,
+            COUNT(l.id)::int AS licenses_count,
+            COUNT(l.id) FILTER (WHERE l.status = 'active')::int AS active_licenses
+     FROM users u
+     LEFT JOIN licenses l ON l.user_id = u.id
+     GROUP BY u.id
+     ORDER BY u.created_at DESC
+     LIMIT 300`
+  )
+  res.json({ users: result.rows })
+}))
+
+app.get('/api/admin/licenses', adminAuth, asyncHandler(async (_, res) => {
+  const result = await query(
+    `SELECT l.id, l.key, l.plan_id, l.status, l.hwid, l.premium, l.expires_at, l.created_at, l.last_verified_at,
+            u.email
+     FROM licenses l
+     LEFT JOIN users u ON u.id = l.user_id
+     ORDER BY l.created_at DESC
+     LIMIT 500`
+  )
+  res.json({ licenses: result.rows })
+}))
+
+app.post('/api/admin/licenses', adminAuth, asyncHandler(async (req, res) => {
+  const email = normalizeEmail(req.body.email)
+  const planId = String(req.body.planId || 'manual_lifetime').trim()
+  const status = String(req.body.status || 'active').trim()
+  const days = req.body.days === null || req.body.days === '' || req.body.days === undefined ? null : Number(req.body.days)
+  const premium = Boolean(req.body.premium)
+
+  if (!email.includes('@')) return res.status(400).json({ error: 'Valid user email required.' })
+
+  const userRes = await query('SELECT id, email FROM users WHERE email = $1', [email])
+  if (!userRes.rows.length) return res.status(404).json({ error: 'User not found. Ask them to register first.' })
+
+  const key = generateLicenseKey(planId)
+  const expiresAt = addDays(days)
+
+  const created = await query(
+    `INSERT INTO licenses(user_id, key, plan_id, status, expires_at, premium)
+     VALUES($1,$2,$3,$4,$5,$6)
+     RETURNING *`,
+    [userRes.rows[0].id, key, planId, status, expiresAt, premium]
+  )
+
+  res.json({ license: created.rows[0] })
+}))
+
+app.patch('/api/admin/licenses/:id/revoke', adminAuth, asyncHandler(async (req, res) => {
+  const updated = await query('UPDATE licenses SET status = $1 WHERE id = $2 RETURNING *', ['revoked', req.params.id])
+  if (!updated.rows.length) return res.status(404).json({ error: 'License not found.' })
+  res.json({ license: updated.rows[0] })
+}))
+
+app.patch('/api/admin/licenses/:id/reset-hwid', adminAuth, asyncHandler(async (req, res) => {
+  const updated = await query('UPDATE licenses SET hwid = NULL WHERE id = $1 RETURNING *', [req.params.id])
+  if (!updated.rows.length) return res.status(404).json({ error: 'License not found.' })
+  res.json({ license: updated.rows[0] })
+}))
+
+app.get('/api/admin/hwid-requests', adminAuth, asyncHandler(async (_, res) => {
+  const result = await query(
+    `SELECT r.id, r.reason, r.status, r.admin_note, r.created_at, r.reviewed_at,
+            u.email, l.id AS license_id, l.key, l.plan_id, l.hwid
+     FROM hwid_reset_requests r
+     JOIN users u ON u.id = r.user_id
+     JOIN licenses l ON l.id = r.license_id
+     ORDER BY
+       CASE WHEN r.status = 'pending' THEN 0 ELSE 1 END,
+       r.created_at DESC
+     LIMIT 500`
+  )
+  res.json({ requests: result.rows })
+}))
+
+app.post('/api/admin/hwid-requests/:id/approve', adminAuth, asyncHandler(async (req, res) => {
+  const note = String(req.body.note || 'Approved by admin.').slice(0, 500)
+  const requestRes = await query('SELECT * FROM hwid_reset_requests WHERE id = $1', [req.params.id])
+  if (!requestRes.rows.length) return res.status(404).json({ error: 'Request not found.' })
+
+  const request = requestRes.rows[0]
+  await query('UPDATE licenses SET hwid = NULL WHERE id = $1', [request.license_id])
+  const updated = await query(
+    `UPDATE hwid_reset_requests
+     SET status = 'approved', admin_note = $1, reviewed_at = NOW()
+     WHERE id = $2
+     RETURNING *`,
+    [note, req.params.id]
+  )
+
+  res.json({ request: updated.rows[0], message: 'HWID reset approved and license HWID cleared.' })
+}))
+
+app.post('/api/admin/hwid-requests/:id/decline', adminAuth, asyncHandler(async (req, res) => {
+  const note = String(req.body.note || 'Declined by admin.').slice(0, 500)
+  const updated = await query(
+    `UPDATE hwid_reset_requests
+     SET status = 'declined', admin_note = $1, reviewed_at = NOW()
+     WHERE id = $2
+     RETURNING *`,
+    [note, req.params.id]
+  )
+  if (!updated.rows.length) return res.status(404).json({ error: 'Request not found.' })
+  res.json({ request: updated.rows[0] })
+}))
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Route not found.' })
