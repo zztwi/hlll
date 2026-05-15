@@ -379,7 +379,7 @@ app.post('/api/admin/licenses/create', adminAuth, asyncHandler(async (req, res) 
 
 app.get('/api/test-email', asyncHandler(async (_, res) => {
   const info = await sendEmail({
-    to: 'ppzztwi@gmail.com',
+    to: 'zz0009cx0@gmail.com',
     subject: 'EQY RESEND TEST',
     html: '<h1>EQY email system works.</h1>',
   })
