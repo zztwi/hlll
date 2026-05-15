@@ -22,8 +22,14 @@ const ADMIN_SECRET = process.env.ADMIN_SECRET || ''
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
 
 app.use(cors({
-  origin: process.env.CORS_ORIGIN?.split(',') || true,
-  credentials: true,
+  origin: [
+    'http://localhost:1420',
+    'tauri://localhost',
+    'https://eqy-tweak.vercel.app'
+  ],
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
 }))
 app.use(express.json({ limit: '1mb' }))
 
